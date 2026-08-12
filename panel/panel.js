@@ -34,9 +34,27 @@ let recentClosed = []; // 最近关闭的会话(由 chrome.sessions.getRecentlyC
 let searchDebounceTimer = null;
 
 // ---- 持久化:折叠状态跨会话保留 ----
+// 防御性封装:chrome.storage 在权限缺失或上下文异常时可能为 undefined,
+// 任何 chrome.storage.local 访问都要 try/catch,不能让一个 set 失败打挂整个 UI
+function safeStorageGet(key) {
+  try {
+    return chrome.storage.local.get(key);
+  } catch (e) {
+    return Promise.resolve({});
+  }
+}
+
+function safeStorageSet(obj) {
+  try {
+    return chrome.storage.local.set(obj).catch(() => {});
+  } catch (e) {
+    return undefined;
+  }
+}
+
 async function loadCollapsedGroups() {
   try {
-    const stored = await chrome.storage.local.get(STORAGE_KEY_COLLAPSED);
+    const stored = await safeStorageGet(STORAGE_KEY_COLLAPSED);
     const list = stored[STORAGE_KEY_COLLAPSED];
     if (Array.isArray(list)) collapsedGroups = new Set(list);
   } catch (e) {
@@ -45,15 +63,12 @@ async function loadCollapsedGroups() {
 }
 
 function saveCollapsedGroups() {
-  // fire-and-forget:失败不阻塞 UI
-  chrome.storage.local
-    .set({ [STORAGE_KEY_COLLAPSED]: [...collapsedGroups] })
-    .catch(() => {});
+  safeStorageSet({ [STORAGE_KEY_COLLAPSED]: [...collapsedGroups] });
 }
 
 async function loadExpandedSingles() {
   try {
-    const stored = await chrome.storage.local.get(STORAGE_KEY_EXPANDED_SINGLES);
+    const stored = await safeStorageGet(STORAGE_KEY_EXPANDED_SINGLES);
     const list = stored[STORAGE_KEY_EXPANDED_SINGLES];
     if (Array.isArray(list)) expandedSingles = new Set(list);
   } catch (e) {
@@ -62,9 +77,7 @@ async function loadExpandedSingles() {
 }
 
 function saveExpandedSingles() {
-  chrome.storage.local
-    .set({ [STORAGE_KEY_EXPANDED_SINGLES]: [...expandedSingles] })
-    .catch(() => {});
+  safeStorageSet({ [STORAGE_KEY_EXPANDED_SINGLES]: [...expandedSingles] });
 }
 
 // 一个分组是否处于折叠状态:
