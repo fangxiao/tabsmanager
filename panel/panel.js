@@ -21,10 +21,12 @@ const recentListEl = document.getElementById('recentList');
 
 const OTHER_KEY = '__other__';
 const STORAGE_KEY_COLLAPSED = 'collapsedGroups';
+const STORAGE_KEY_EXPANDED_SINGLES = 'expandedSingles';
 
 // ---- 状态 ----
 const selected = new Set(); // 勾选的 tabId 集合
-let collapsedGroups = new Set(); // 折叠的分组 key 集合(从 storage 恢复)
+let collapsedGroups = new Set(); // 用户手动折叠的分组(跨会话持久化)
+let expandedSingles = new Set(); // 用户手动展开的单 tab 分组(覆盖自动折叠)
 let searchQuery = ''; // 当前搜索关键词(已小写、首尾 trim)
 let totalManageable = 0; // 全部可管理 tab 数(用于显示 N/M)
 let cachedTabs = []; // 缓存的可管理 tab 列表(搜索时本地过滤用)
@@ -47,6 +49,32 @@ function saveCollapsedGroups() {
   chrome.storage.local
     .set({ [STORAGE_KEY_COLLAPSED]: [...collapsedGroups] })
     .catch(() => {});
+}
+
+async function loadExpandedSingles() {
+  try {
+    const stored = await chrome.storage.local.get(STORAGE_KEY_EXPANDED_SINGLES);
+    const list = stored[STORAGE_KEY_EXPANDED_SINGLES];
+    if (Array.isArray(list)) expandedSingles = new Set(list);
+  } catch (e) {
+    /* ignore */
+  }
+}
+
+function saveExpandedSingles() {
+  chrome.storage.local
+    .set({ [STORAGE_KEY_EXPANDED_SINGLES]: [...expandedSingles] })
+    .catch(() => {});
+}
+
+// 一个分组是否处于折叠状态:
+//   1) 用户手动折叠过 → 折叠
+//   2) 是单 tab 分组 且 用户没有手动展开过 → 自动折叠
+//   3) 其他情况 → 展开
+function isGroupCollapsed(group) {
+  if (collapsedGroups.has(group.key)) return true;
+  if (group.tabs.length === 1 && !expandedSingles.has(group.key)) return true;
+  return false;
 }
 let groups = []; // [{ key, displayName, tabs: [...] }]
 let activeTabId = null;
@@ -279,7 +307,7 @@ function buildGroupEl(group) {
   const groupEl = document.createElement('section');
   groupEl.className = 'group';
   groupEl.dataset.groupKey = group.key;
-  if (collapsedGroups.has(group.key)) groupEl.classList.add('collapsed');
+  if (isGroupCollapsed(group)) groupEl.classList.add('collapsed');
 
   // 分组头
   const header = document.createElement('div');
@@ -288,8 +316,8 @@ function buildGroupEl(group) {
   const toggle = document.createElement('button');
   toggle.className = 'group-toggle';
   toggle.type = 'button';
-  toggle.textContent = '▾';
-  toggle.title = collapsedGroups.has(group.key) ? '展开' : '折叠';
+  toggle.textContent = isGroupCollapsed(group) ? '▸' : '▾';
+  toggle.title = isGroupCollapsed(group) ? '展开' : '折叠';
 
   const name = document.createElement('span');
   name.className = 'group-name';
@@ -489,17 +517,35 @@ function renderActionBar() {
 
 // ---- 操作 ----
 function toggleGroup(key) {
-  if (collapsedGroups.has(key)) collapsedGroups.delete(key);
-  else collapsedGroups.add(key);
-  saveCollapsedGroups();
-  // 仅重渲染对应分组,避免整树重建
   const group = groups.find((g) => g.key === key);
   if (!group) return;
+  const wasCollapsed = isGroupCollapsed(group);
+
+  if (wasCollapsed) {
+    // 展开
+    collapsedGroups.delete(key);
+    if (group.tabs.length === 1) expandedSingles.add(key);
+    else expandedSingles.delete(key);
+    saveCollapsedGroups();
+    saveExpandedSingles();
+  } else {
+    // 折叠
+    collapsedGroups.add(key);
+    expandedSingles.delete(key);
+    saveCollapsedGroups();
+    saveExpandedSingles();
+  }
+
+  // 仅更新对应分组的 DOM,避免整树重建
   const groupEl = groupListEl.querySelector(`.group[data-group-key="${CSS.escape(key)}"]`);
   if (groupEl) {
     groupEl.classList.toggle('collapsed');
     const toggle = groupEl.querySelector('.group-toggle');
-    if (toggle) toggle.textContent = collapsedGroups.has(key) ? '▸' : '▾';
+    if (toggle) {
+      const nowCollapsed = !wasCollapsed;
+      toggle.textContent = nowCollapsed ? '▸' : '▾';
+      toggle.title = nowCollapsed ? '展开' : '折叠';
+    }
   }
 }
 
@@ -670,6 +716,7 @@ searchClearEl.addEventListener('click', () => {
 // ---- 启动 ----
 (async function init() {
   await loadCollapsedGroups();
+  await loadExpandedSingles();
   connectPort();
   refresh();
 })();
