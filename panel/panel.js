@@ -568,7 +568,6 @@ async function restoreTab(tabId) {
 async function closeSelected() {
   const ids = getVisibleSelectedIds();
   if (ids.length === 0) return;
-  if (!confirm(`确定关闭选中的 ${ids.length} 个标签页吗?`)) return;
   try {
     await chrome.tabs.remove(ids);
   } catch (e) {
@@ -596,7 +595,6 @@ async function discardSelected() {
 async function closeGroup(key) {
   const group = groups.find((g) => g.key === key);
   if (!group || group.tabs.length === 0) return;
-  if (!confirm(`确定关闭 "${group.displayName}" 分组下的 ${group.tabs.length} 个标签页吗?`)) return;
   const ids = group.tabs.map((t) => t.id);
   try {
     await chrome.tabs.remove(ids);
