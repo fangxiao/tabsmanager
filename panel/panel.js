@@ -16,6 +16,8 @@ const closeCountEl = document.getElementById('closeCount');
 const discardCountEl = document.getElementById('discardCount');
 const searchInputEl = document.getElementById('searchInput');
 const searchClearEl = document.getElementById('searchClear');
+const recentSectionEl = document.getElementById('recentSection');
+const recentListEl = document.getElementById('recentList');
 
 const OTHER_KEY = '__other__';
 const STORAGE_KEY_COLLAPSED = 'collapsedGroups';
@@ -25,6 +27,9 @@ const selected = new Set(); // 勾选的 tabId 集合
 let collapsedGroups = new Set(); // 折叠的分组 key 集合(从 storage 恢复)
 let searchQuery = ''; // 当前搜索关键词(已小写、首尾 trim)
 let totalManageable = 0; // 全部可管理 tab 数(用于显示 N/M)
+let cachedTabs = []; // 缓存的可管理 tab 列表(搜索时本地过滤用)
+let recentClosed = []; // 最近关闭的会话(由 chrome.sessions.getRecentlyClosed 返回)
+let searchDebounceTimer = null;
 
 // ---- 持久化:折叠状态跨会话保留 ----
 async function loadCollapsedGroups() {
@@ -72,20 +77,23 @@ function connectPort() {
 }
 
 // ---- 数据查询与分组 ----
+// 真实变化(tabs 事件、SW 重连等):重新查 chrome.tabs 并刷新
 async function refresh() {
-  let tabs;
-  let focusedWinId;
+  let tabs, focusedWinId, recent;
   try {
-    [tabs, focusedWinId] = await Promise.all([
+    [tabs, focusedWinId, recent] = await Promise.all([
       chrome.tabs.query({}),
       chrome.windows.getLastFocused().then((w) => w.id),
+      chrome.sessions.getRecentlyClosed({ maxResults: 10 }).catch(() => []),
     ]);
   } catch (e) {
     return;
   }
 
   const manageable = tabs.filter((t) => SettabsDomain.isManageable(t));
+  cachedTabs = manageable;
   totalManageable = manageable.length;
+  recentClosed = Array.isArray(recent) ? recent : [];
   activeTabId = null;
   for (const t of tabs) {
     if (t.active && t.windowId === focusedWinId) {
@@ -94,8 +102,18 @@ async function refresh() {
     }
   }
 
-  groups = buildGroups(manageable);
-  pruneSelection(manageable);
+  buildAndRender();
+  renderRecent();
+}
+
+// 本地变化(搜索、勾选、折叠等):用缓存重渲,不查 chrome
+function rerender() {
+  buildAndRender();
+}
+
+function buildAndRender() {
+  groups = buildGroups(cachedTabs);
+  pruneSelection(cachedTabs);
   render();
 }
 
@@ -185,6 +203,78 @@ function setEmptyState(icon, text, hint) {
   if (hintEl) hintEl.textContent = hint;
 }
 
+// ---- 最近关闭渲染 ----
+function formatRelativeTime(ms) {
+  if (!ms) return '';
+  const diff = Date.now() - ms;
+  if (diff < 60_000) return '刚刚';
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
+  return `${Math.floor(diff / 86_400_000)} 天前`;
+}
+
+function renderRecent() {
+  if (recentClosed.length === 0) {
+    recentSectionEl.classList.add('hidden');
+    return;
+  }
+  recentSectionEl.classList.remove('hidden');
+  recentListEl.textContent = '';
+  for (const session of recentClosed) {
+    recentListEl.appendChild(buildRecentRowEl(session));
+  }
+}
+
+function buildRecentRowEl(session) {
+  const row = document.createElement('div');
+  row.className = 'recent-row';
+
+  const isWindow = !session.tab;
+  let title, subtitle;
+  if (isWindow) {
+    const w = session.window || {};
+    const firstTab = (w.tabs && w.tabs[0]) || {};
+    title = firstTab.title || '(空窗口)';
+    const tabCount = (w.tabs || []).length;
+    subtitle = `窗口 · ${tabCount} 个标签页`;
+  } else {
+    title = session.tab.title || '(无标题)';
+    subtitle = formatRelativeTime(session.lastModified);
+  }
+
+  const info = document.createElement('div');
+  info.className = 'recent-info';
+  const titleEl = document.createElement('div');
+  titleEl.className = 'recent-title';
+  titleEl.textContent = title;
+  const subtitleEl = document.createElement('div');
+  subtitleEl.className = 'recent-subtitle';
+  subtitleEl.textContent = subtitle;
+  info.append(titleEl, subtitleEl);
+
+  const restoreBtn = document.createElement('button');
+  restoreBtn.className = 'recent-restore';
+  restoreBtn.type = 'button';
+  restoreBtn.textContent = '恢复';
+  restoreBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    restoreSession(session.sessionId);
+  });
+
+  row.append(info, restoreBtn);
+  return row;
+}
+
+async function restoreSession(sessionId) {
+  if (sessionId == null) return;
+  try {
+    await chrome.sessions.restore(sessionId);
+  } catch (e) {
+    /* ignore */
+  }
+  // 恢复操作会触发 tabs 事件,由 SW 广播 → 自动 refresh
+}
+
 function buildGroupEl(group) {
   const groupEl = document.createElement('section');
   groupEl.className = 'group';
@@ -207,7 +297,7 @@ function buildGroupEl(group) {
 
   const count = document.createElement('span');
   count.className = 'group-count';
-  count.textContent = String(group.tabs.length);
+  applyGroupCount(count, group);
 
   const groupSelLabel = document.createElement('label');
   groupSelLabel.className = 'group-select-label';
@@ -220,7 +310,30 @@ function buildGroupEl(group) {
   groupSelLabel.append(groupSel, groupSelText);
   updateGroupCheckbox(groupSel, group);
 
-  header.append(toggle, name, count, groupSelLabel);
+  // 分组级批量操作(默认透明,hover 时显示)
+  const groupActions = document.createElement('span');
+  groupActions.className = 'group-actions';
+  const discardAllBtn = document.createElement('button');
+  discardAllBtn.type = 'button';
+  discardAllBtn.className = 'group-action-btn';
+  discardAllBtn.textContent = '挂起';
+  discardAllBtn.title = `挂起整个 ${group.displayName} 分组`;
+  discardAllBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    discardGroup(group.key);
+  });
+  const closeAllBtn = document.createElement('button');
+  closeAllBtn.type = 'button';
+  closeAllBtn.className = 'group-action-btn danger';
+  closeAllBtn.textContent = '关闭';
+  closeAllBtn.title = `关闭整个 ${group.displayName} 分组`;
+  closeAllBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeGroup(group.key);
+  });
+  groupActions.append(discardAllBtn, closeAllBtn);
+
+  header.append(toggle, name, count, groupSelLabel, groupActions);
   header.addEventListener('click', (e) => {
     // 点击 checkbox/按钮不触发折叠
     if (e.target.closest('input, button')) return;
@@ -346,6 +459,19 @@ function updateGroupCheckbox(input, group) {
   input.indeterminate = checked > 0 && checked < total;
 }
 
+// 渲染 group-count:有勾选时显示 "X / Y",否则只显示总数
+function applyGroupCount(el, group) {
+  const total = group.tabs.length;
+  const checked = group.tabs.filter((t) => selected.has(t.id)).length;
+  if (checked > 0) {
+    el.textContent = `${checked} / ${total}`;
+    el.classList.add('has-selection');
+  } else {
+    el.textContent = String(total);
+    el.classList.remove('has-selection');
+  }
+}
+
 function renderSelectAllState() {
   const total = groups.reduce((n, g) => n + g.tabs.length, 0);
   const checked = getVisibleSelectedCount();
@@ -420,6 +546,35 @@ async function discardSelected() {
   refresh();
 }
 
+// 分组级批量:关闭整组
+async function closeGroup(key) {
+  const group = groups.find((g) => g.key === key);
+  if (!group || group.tabs.length === 0) return;
+  if (!confirm(`确定关闭 "${group.displayName}" 分组下的 ${group.tabs.length} 个标签页吗?`)) return;
+  const ids = group.tabs.map((t) => t.id);
+  try {
+    await chrome.tabs.remove(ids);
+  } catch (e) {
+    /* 部分已关闭 */
+  }
+  refresh();
+}
+
+// 分组级批量:挂起整组
+async function discardGroup(key) {
+  const group = groups.find((g) => g.key === key);
+  if (!group || group.tabs.length === 0) return;
+  const ids = group.tabs.map((t) => t.id);
+  for (const id of ids) {
+    try {
+      await chrome.tabs.discard(id);
+    } catch (e) {
+      /* 单个失败不影响其他 */
+    }
+  }
+  refresh();
+}
+
 // ---- 事件绑定 ----
 selectAllEl.addEventListener('change', () => {
   if (selectAllEl.checked) {
@@ -443,12 +598,14 @@ groupListEl.addEventListener('change', (e) => {
     else selected.delete(id);
     const row = target.closest('.tab-row');
     if (row) row.classList.toggle('selected', target.checked);
-    // 更新所属分组 checkbox 状态
+    // 更新所属分组 checkbox + count
     const groupEl = target.closest('.group');
     const group = groups.find((g) => g.key === groupEl.dataset.groupKey);
     if (group) {
       const groupSel = groupEl.querySelector('.group-select');
       if (groupSel) updateGroupCheckbox(groupSel, group);
+      const countEl = groupEl.querySelector('.group-count');
+      if (countEl) applyGroupCount(countEl, group);
     }
     renderSelectAllState();
     renderActionBar();
@@ -478,13 +635,17 @@ groupListEl.addEventListener('click', (e) => {
 closeSelectedBtn.addEventListener('click', closeSelected);
 discardSelectedBtn.addEventListener('click', discardSelected);
 
-// 搜索:实时过滤,无关键词时显示全部
+// 搜索:本地过滤 + 80ms debounce,不重查 chrome
 function setSearchQuery(raw) {
   const next = (raw || '').trim().toLowerCase();
   if (next === searchQuery) return;
   searchQuery = next;
   searchClearEl.classList.toggle('hidden', next.length === 0);
-  refresh();
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(() => {
+    searchDebounceTimer = null;
+    rerender();
+  }, 80);
 }
 
 searchInputEl.addEventListener('input', (e) => {
