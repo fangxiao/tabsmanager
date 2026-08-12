@@ -318,6 +318,10 @@ function buildGroupEl(group) {
   toggle.type = 'button';
   toggle.textContent = isGroupCollapsed(group) ? '▸' : '▾';
   toggle.title = isGroupCollapsed(group) ? '展开' : '折叠';
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleGroup(group.key);
+  });
 
   const name = document.createElement('span');
   name.className = 'group-name';
