@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "tabs管理工具",
+  "version": "0.1.0",
+  "description": "按域名分组管理标签页,批量关闭与挂起释放内存",
+  "minimum_chrome_version": "114",
+  "permissions": ["tabs", "sidePanel"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "panel/panel.html"
+  },
+  "action": {
+    "default_title": "打开 tabs管理工具",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

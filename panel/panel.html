@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>tabs管理工具</title>
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="topbar-title">tabs管理工具</div>
+      <div class="topbar-count">共 <span id="totalCount">0</span> 个标签页</div>
+    </div>
+    <label class="select-all-label">
+      <input type="checkbox" id="selectAll">
+      <span>全选</span>
+    </label>
+  </header>
+
+  <div class="search-bar">
+    <span class="search-icon" aria-hidden="true">⌕</span>
+    <input
+      type="search"
+      id="searchInput"
+      class="search-input"
+      placeholder="搜索标题、URL、域名"
+      autocomplete="off"
+      spellcheck="false"
+    >
+    <button id="searchClear" class="search-clear hidden" type="button" title="清空搜索" aria-label="清空搜索">×</button>
+  </div>
+
+  <main id="groupList" class="group-list"></main>
+
+  <div id="emptyState" class="empty-state hidden">
+    <div class="empty-icon">✓</div>
+    <div class="empty-text">没有可管理的标签页</div>
+    <div class="empty-hint">新打开的网页会按域名自动分组显示在这里</div>
+  </div>
+
+  <footer id="actionBar" class="action-bar hidden">
+    <button id="closeSelected" class="btn btn-danger" type="button">
+      关闭选中(<span class="btn-count" id="closeCount">0</span>)
+    </button>
+    <button id="discardSelected" class="btn" type="button">
+      挂起选中(<span class="btn-count" id="discardCount">0</span>)
+    </button>
+  </footer>
+
+  <script src="../shared/domain.js"></script>
+  <script src="panel.js"></script>
+</body>
+</html>
