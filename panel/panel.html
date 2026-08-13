@@ -33,8 +33,9 @@
 
   <main id="groupList" class="group-list"></main>
 
-  <section id="recentSection" class="recent-section hidden">
-    <div class="recent-header">
+  <section id="recentSection" class="recent-section collapsed hidden">
+    <div class="recent-header" id="recentHeader" role="button" tabindex="0" title="展开/折叠">
+      <span class="recent-toggle" id="recentToggle">▸</span>
       <span class="recent-title">最近关闭</span>
     </div>
     <div class="recent-list" id="recentList"></div>

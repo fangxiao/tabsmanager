@@ -17,6 +17,8 @@ const discardCountEl = document.getElementById('discardCount');
 const searchInputEl = document.getElementById('searchInput');
 const searchClearEl = document.getElementById('searchClear');
 const recentSectionEl = document.getElementById('recentSection');
+const recentHeaderEl = document.getElementById('recentHeader');
+const recentToggleEl = document.getElementById('recentToggle');
 const recentListEl = document.getElementById('recentList');
 
 const OTHER_KEY = '__other__';
@@ -31,6 +33,7 @@ let searchQuery = ''; // 当前搜索关键词(已小写、首尾 trim)
 let totalManageable = 0; // 全部可管理 tab 数(用于显示 N/M)
 let cachedTabs = []; // 缓存的可管理 tab 列表(搜索时本地过滤用)
 let recentClosed = []; // 最近关闭的会话(由 chrome.sessions.getRecentlyClosed 返回)
+let recentCollapsed = true; // 最近关闭默认折叠,点击标题才展开
 let searchDebounceTimer = null;
 
 // ---- 持久化:折叠状态跨会话保留 ----
@@ -264,6 +267,13 @@ function renderRecent() {
   for (const session of recentClosed) {
     recentListEl.appendChild(buildRecentRowEl(session));
   }
+  renderRecentToggle();
+}
+
+// 最近关闭折叠状态:默认折叠,点击标题展开/收起
+function renderRecentToggle() {
+  recentToggleEl.textContent = recentCollapsed ? '▸' : '▾';
+  recentSectionEl.classList.toggle('collapsed', recentCollapsed);
 }
 
 function buildRecentRowEl(session) {
@@ -436,6 +446,33 @@ function buildTabRowEl(tab, group) {
 
   row.append(check, favWrap, info);
 
+  // 行内快捷操作(默认透明,hover 时显示):挂起 + 关闭
+  const actions = document.createElement('span');
+  actions.className = 'tab-actions';
+
+  const suspendBtn = document.createElement('button');
+  suspendBtn.type = 'button';
+  suspendBtn.className = 'tab-action-btn';
+  suspendBtn.textContent = '挂起';
+  suspendBtn.title = '挂起此标签页,释放内存';
+  suspendBtn.disabled = tab.discarded; // 已挂起无需再挂
+  suspendBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    discardTab(tab.id);
+  });
+
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'tab-action-btn danger';
+  closeBtn.textContent = '关闭';
+  closeBtn.title = '关闭此标签页';
+  closeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeTab(tab.id);
+  });
+
+  actions.append(suspendBtn, closeBtn);
+
   // 挂起角标 + 恢复按钮
   if (tab.discarded) {
     const badge = document.createElement('span');
@@ -451,6 +488,8 @@ function buildTabRowEl(tab, group) {
     });
     row.append(badge, restore);
   }
+
+  row.append(actions);
 
   return row;
 }
@@ -636,6 +675,26 @@ async function discardGroup(key) {
   refresh();
 }
 
+// 单 tab 快捷操作:关闭
+async function closeTab(tabId) {
+  try {
+    await chrome.tabs.remove(tabId);
+  } catch (e) {
+    /* tab 可能已关闭 */
+  }
+  refresh();
+}
+
+// 单 tab 快捷操作:挂起
+async function discardTab(tabId) {
+  try {
+    await chrome.tabs.discard(tabId);
+  } catch (e) {
+    /* ignore */
+  }
+  refresh();
+}
+
 // ---- 事件绑定 ----
 selectAllEl.addEventListener('change', () => {
   if (selectAllEl.checked) {
@@ -726,6 +785,20 @@ searchClearEl.addEventListener('click', () => {
   searchInputEl.value = '';
   setSearchQuery('');
   searchInputEl.focus();
+});
+
+// 最近关闭:点击标题展开/收起(含键盘 Enter / Space)
+recentHeaderEl.addEventListener('click', () => {
+  recentCollapsed = !recentCollapsed;
+  renderRecentToggle();
+});
+
+recentHeaderEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    recentCollapsed = !recentCollapsed;
+    renderRecentToggle();
+  }
 });
 
 // ---- 启动 ----
