@@ -20,10 +20,20 @@ const recentSectionEl = document.getElementById('recentSection');
 const recentHeaderEl = document.getElementById('recentHeader');
 const recentToggleEl = document.getElementById('recentToggle');
 const recentListEl = document.getElementById('recentList');
+const viewDomainBtn = document.getElementById('viewDomain');
+const viewTypeBtn = document.getElementById('viewType');
+const settingsBtnEl = document.getElementById('settingsBtn');
+const settingsPopEl = document.getElementById('settingsPop');
+const customRuleListEl = document.getElementById('customRuleList');
+const ruleDomainEl = document.getElementById('ruleDomain');
+const ruleCategoryEl = document.getElementById('ruleCategory');
+const ruleAddEl = document.getElementById('ruleAdd');
 
 const OTHER_KEY = '__other__';
 const STORAGE_KEY_COLLAPSED = 'collapsedGroups';
 const STORAGE_KEY_EXPANDED_SINGLES = 'expandedSingles';
+const VIEW_STORAGE_KEY = 'viewMode';
+const STORAGE_KEY_CUSTOM_RULES = 'customCategoryRules';
 
 // ---- 状态 ----
 const selected = new Set(); // 勾选的 tabId 集合
@@ -34,6 +44,8 @@ let totalManageable = 0; // 全部可管理 tab 数(用于显示 N/M)
 let cachedTabs = []; // 缓存的可管理 tab 列表(搜索时本地过滤用)
 let recentClosed = []; // 最近关闭的会话(由 chrome.sessions.getRecentlyClosed 返回)
 let recentCollapsed = true; // 最近关闭默认折叠,点击标题才展开
+let viewMode = 'domain'; // 分组视图:'domain' 按域名 | 'type' 按类型
+let customRules = []; // 用户自定义分类规则 [{ domain, category }]
 let searchDebounceTimer = null;
 
 // ---- 持久化:折叠状态跨会话保留 ----
@@ -81,6 +93,50 @@ async function loadExpandedSingles() {
 
 function saveExpandedSingles() {
   safeStorageSet({ [STORAGE_KEY_EXPANDED_SINGLES]: [...expandedSingles] });
+}
+
+// ---- 持久化:视图选择跨会话保留 ----
+async function loadViewMode() {
+  try {
+    const stored = await safeStorageGet(VIEW_STORAGE_KEY);
+    if (stored[VIEW_STORAGE_KEY] === 'type') viewMode = 'type';
+  } catch (e) {
+    /* 默认按域名 */
+  }
+  syncViewToggle();
+}
+
+function saveViewMode() {
+  safeStorageSet({ [VIEW_STORAGE_KEY]: viewMode });
+}
+
+function syncViewToggle() {
+  const isType = viewMode === 'type';
+  viewDomainBtn.classList.toggle('active', !isType);
+  viewTypeBtn.classList.toggle('active', isType);
+  viewDomainBtn.setAttribute('aria-selected', String(!isType));
+  viewTypeBtn.setAttribute('aria-selected', String(isType));
+}
+
+// ---- 持久化:自定义分类规则 ----
+async function loadCustomRules() {
+  try {
+    const stored = await safeStorageGet(STORAGE_KEY_CUSTOM_RULES);
+    const list = stored[STORAGE_KEY_CUSTOM_RULES];
+    if (Array.isArray(list)) {
+      customRules = list.filter(
+        (r) => r && typeof r.domain === 'string' && typeof r.category === 'string'
+      );
+    }
+  } catch (e) {
+    /* ignore */
+  }
+  SettabsCategories.setCustomRules(customRules);
+}
+
+function saveCustomRules() {
+  safeStorageSet({ [STORAGE_KEY_CUSTOM_RULES]: customRules });
+  SettabsCategories.setCustomRules(customRules);
 }
 
 // 一个分组是否处于折叠状态:
@@ -173,30 +229,68 @@ function matchesSearch(tab, q) {
   return false;
 }
 
+// 当前视图下 tab 的分组 key:按类型视图用 'type:' 前缀区分,避免与域名 key 冲突
+function groupKeyFor(tab) {
+  if (viewMode === 'type') {
+    const host = SettabsDomain.getDomainKey(tab.url) || '';
+    // 分类器:标题/URL 关键词为主,域名表兜底
+    return 'type:' + SettabsCategories.getCategory(host, tab.title, tab.url);
+  }
+  return SettabsDomain.getDomainKey(tab.url) || OTHER_KEY;
+}
+
+// 分组展示名:类型 key 去掉 'type:' 前缀;域名视图下 "其他" 兜底
+function displayNameFor(key) {
+  if (viewMode === 'type' && key.startsWith('type:')) return key.slice(5);
+  if (key === OTHER_KEY) return '其他';
+  return key;
+}
+
+// 按类型视图的固定分类顺序(未命中的按序放最后)
+function categoryOrder(group) {
+  const idx = SettabsCategories.CATEGORIES.indexOf(group.displayName);
+  return idx === -1 ? SettabsCategories.CATEGORIES.length : idx;
+}
+
 function buildGroups(tabs) {
   const map = new Map();
   const q = searchQuery;
   for (const tab of tabs) {
     if (!matchesSearch(tab, q)) continue;
-    const key = SettabsDomain.getDomainKey(tab.url) || OTHER_KEY;
+    const key = groupKeyFor(tab);
     if (!map.has(key)) map.set(key, []);
     map.get(key).push(tab);
   }
 
   const groups = [];
   for (const [key, groupTabs] of map) {
-    groupTabs.sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+    if (viewMode === 'type') {
+      // 类型视图:组内先按域名、域名内按 tab 顺序,让同域名 tab 相邻
+      groupTabs.sort(
+        (a, b) =>
+          (SettabsDomain.getDomainKey(a.url) || '').localeCompare(
+            SettabsDomain.getDomainKey(b.url) || ''
+          ) || (a.index ?? 0) - (b.index ?? 0)
+      );
+    } else {
+      groupTabs.sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+    }
     groups.push({
       key,
-      displayName: key === OTHER_KEY ? '其他' : key,
+      displayName: displayNameFor(key),
       tabs: groupTabs,
     });
   }
 
-  // 组间排序:tab 数多的在前,同数量按名字
-  groups.sort(
-    (a, b) => b.tabs.length - a.tabs.length || a.displayName.localeCompare(b.displayName)
-  );
+  if (viewMode === 'type') {
+    // 类型视图:按固定分类顺序展示
+    groups.sort((a, b) => categoryOrder(a) - categoryOrder(b));
+  } else {
+    // 域名视图:tab 数多的在前,同数量按名字
+    groups.sort(
+      (a, b) => b.tabs.length - a.tabs.length || a.displayName.localeCompare(b.displayName)
+    );
+  }
   return groups;
 }
 
@@ -234,7 +328,11 @@ function renderGroups() {
   if (!hasAny && searchQuery) {
     setEmptyState('⌕', '没有匹配的标签页', '试试其他关键词,或清空搜索');
   } else if (!hasAny) {
-    setEmptyState('✓', '没有可管理的标签页', '新打开的网页会按域名自动分组显示在这里');
+    const hint =
+      viewMode === 'type'
+        ? '新打开的网页会按类型自动分组显示在这里'
+        : '新打开的网页会按域名自动分组显示在这里';
+    setEmptyState('✓', '没有可管理的标签页', hint);
   }
 }
 
@@ -430,7 +528,8 @@ function buildTabRowEl(tab, group) {
   const img = document.createElement('img');
   img.className = 'favicon';
   img.alt = '';
-  setFavicon(img, tab, group.key);
+  // favicon 按单 tab 域名解析:类型视图下分组 key 是分类名,不能用
+  setFavicon(img, tab, SettabsDomain.getDomainKey(tab.url) || OTHER_KEY);
   favWrap.append(letter, img);
 
   // 标题 + URL
@@ -801,10 +900,110 @@ recentHeaderEl.addEventListener('keydown', (e) => {
   }
 });
 
+// ---- 视图切换:按域名 / 按类型(选择跨会话记住) ----
+function setViewMode(mode) {
+  if (mode === viewMode) return;
+  viewMode = mode;
+  saveViewMode();
+  syncViewToggle();
+  rerender();
+}
+
+viewDomainBtn.addEventListener('click', () => setViewMode('domain'));
+viewTypeBtn.addEventListener('click', () => setViewMode('type'));
+
+// ---- 自定义分类:增删规则,实时生效 ----
+function populateRuleCategorySelect() {
+  ruleCategoryEl.textContent = '';
+  for (const cat of SettabsCategories.CATEGORIES) {
+    if (cat === SettabsCategories.OTHER) continue;
+    const opt = document.createElement('option');
+    opt.value = cat;
+    opt.textContent = cat;
+    ruleCategoryEl.appendChild(opt);
+  }
+}
+
+function renderCustomRuleList() {
+  customRuleListEl.textContent = '';
+  for (const rule of customRules) {
+    const row = document.createElement('div');
+    row.className = 'custom-rule-row';
+
+    const info = document.createElement('div');
+    info.className = 'custom-rule-info';
+    const domainEl = document.createElement('span');
+    domainEl.className = 'custom-rule-domain';
+    domainEl.textContent = rule.domain;
+    const catEl = document.createElement('span');
+    catEl.className = 'custom-rule-cat';
+    catEl.textContent = rule.category;
+    info.append(domainEl, catEl);
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'custom-rule-del';
+    del.textContent = '×';
+    del.title = '删除此规则';
+    del.addEventListener('click', () => {
+      customRules = customRules.filter((r) => r !== rule);
+      saveCustomRules();
+      renderCustomRuleList();
+      rerender();
+    });
+
+    row.append(info, del);
+    customRuleListEl.appendChild(row);
+  }
+}
+
+function addCustomRule() {
+  const domain = (ruleDomainEl.value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^www\./, '');
+  const category = ruleCategoryEl.value;
+  // 简单校验:非空 + 只含域名合法字符;非法输入直接忽略
+  if (!domain || !category || !/^[a-z0-9.-]+$/.test(domain)) return;
+  // 每个域名一条规则(重复添加则替换)
+  customRules = customRules.filter((r) => r.domain !== domain);
+  customRules.push({ domain, category });
+  saveCustomRules();
+  renderCustomRuleList();
+  ruleDomainEl.value = '';
+  rerender();
+}
+
+ruleAddEl.addEventListener('click', addCustomRule);
+ruleDomainEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    addCustomRule();
+  }
+});
+
+// 设置弹层:点齿轮开合,点击外部关闭
+settingsBtnEl.addEventListener('click', (e) => {
+  e.stopPropagation();
+  settingsPopEl.classList.toggle('hidden');
+});
+
+document.addEventListener('click', (e) => {
+  if (settingsPopEl.classList.contains('hidden')) return;
+  if (e.target.closest('#settingsPop') || e.target.closest('#settingsBtn')) return;
+  settingsPopEl.classList.add('hidden');
+});
+
 // ---- 启动 ----
 (async function init() {
-  await loadCollapsedGroups();
-  await loadExpandedSingles();
+  await Promise.all([
+    loadCollapsedGroups(),
+    loadExpandedSingles(),
+    loadViewMode(),
+    loadCustomRules(),
+  ]);
+  populateRuleCategorySelect();
+  renderCustomRuleList();
   connectPort();
   refresh();
 })();

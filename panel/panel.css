@@ -80,15 +80,22 @@ body {
 /* ---- 搜索栏 ---- */
 .search-bar {
   flex: 0 0 auto;
-  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 8px 12px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
 
+.search-wrap {
+  position: relative;
+  flex: 1 1 auto;
+}
+
 .search-icon {
   position: absolute;
-  left: 22px;
+  left: 10px;
   top: 50%;
   transform: translateY(-50%);
   color: var(--text-secondary);
@@ -127,7 +134,7 @@ body {
 
 .search-clear {
   position: absolute;
-  right: 18px;
+  right: 8px;
   top: 50%;
   transform: translateY(-50%);
   border: none;
@@ -623,4 +630,207 @@ body {
 
 .recent-restore:hover {
   background: #dbeafe;
+}
+
+/* ---- 顶栏右侧 ---- */
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.icon-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.icon-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+/* ---- 分组视图切换(按域名 / 按类型) ---- */
+.view-switch {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.view-switch-btn {
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.view-switch-btn.active {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.view-switch-btn:hover:not(.active) {
+  color: var(--text);
+}
+
+/* ---- 自定义分类设置弹层 ---- */
+.settings-pop {
+  position: fixed;
+  top: 56px;
+  right: 12px;
+  z-index: 20;
+  width: 264px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-pop.hidden {
+  display: none;
+}
+
+.settings-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.custom-rule-list {
+  max-height: 160px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.custom-rule-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+.custom-rule-row:hover {
+  background: var(--hover);
+}
+
+.custom-rule-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.custom-rule-domain {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.custom-rule-cat {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--hover);
+  border-radius: 8px;
+  padding: 1px 6px;
+}
+
+.custom-rule-del {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-family: inherit;
+}
+
+.custom-rule-del:hover {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.custom-rule-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rule-domain {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+  font-family: inherit;
+}
+
+.rule-domain:focus {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+.rule-category {
+  flex: 0 0 auto;
+  font-size: 12px;
+  padding: 5px 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+  font-family: inherit;
+}
+
+.rule-add {
+  flex: 0 0 auto;
+  font-size: 12px;
+  padding: 5px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.rule-add:hover {
+  background: #2563eb;
 }

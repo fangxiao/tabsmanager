@@ -12,23 +12,43 @@
       <div class="topbar-title">tabs管理工具</div>
       <div class="topbar-count">共 <span id="totalCount">0</span> 个标签页</div>
     </div>
-    <label class="select-all-label">
-      <input type="checkbox" id="selectAll">
-      <span>全选</span>
-    </label>
+    <div class="topbar-right">
+      <button id="settingsBtn" class="icon-btn" type="button" title="自定义分类" aria-label="自定义分类">⚙</button>
+      <label class="select-all-label">
+        <input type="checkbox" id="selectAll">
+        <span>全选</span>
+      </label>
+    </div>
   </header>
 
+  <div id="settingsPop" class="settings-pop hidden">
+    <div class="settings-title">自定义分类</div>
+    <div class="settings-sub">把冷门域名手动归入分类,优先于内置规则;支持子域名匹配。</div>
+    <div id="customRuleList" class="custom-rule-list"></div>
+    <div class="custom-rule-form">
+      <input id="ruleDomain" class="rule-domain" type="text" placeholder="域名,如 mycorp.com" autocomplete="off" spellcheck="false">
+      <select id="ruleCategory" class="rule-category" aria-label="分类"></select>
+      <button id="ruleAdd" class="rule-add" type="button">添加</button>
+    </div>
+  </div>
+
   <div class="search-bar">
-    <span class="search-icon" aria-hidden="true">⌕</span>
-    <input
-      type="search"
-      id="searchInput"
-      class="search-input"
-      placeholder="搜索标题、URL、域名"
-      autocomplete="off"
-      spellcheck="false"
-    >
-    <button id="searchClear" class="search-clear hidden" type="button" title="清空搜索" aria-label="清空搜索">×</button>
+    <div class="view-switch" role="tablist" aria-label="分组方式">
+      <button type="button" class="view-switch-btn active" id="viewDomain" role="tab" aria-selected="true">按域名</button>
+      <button type="button" class="view-switch-btn" id="viewType" role="tab" aria-selected="false">按类型</button>
+    </div>
+    <div class="search-wrap">
+      <span class="search-icon" aria-hidden="true">⌕</span>
+      <input
+        type="search"
+        id="searchInput"
+        class="search-input"
+        placeholder="搜索标题、URL、域名"
+        autocomplete="off"
+        spellcheck="false"
+      >
+      <button id="searchClear" class="search-clear hidden" type="button" title="清空搜索" aria-label="清空搜索">×</button>
+    </div>
   </div>
 
   <main id="groupList" class="group-list"></main>
@@ -57,6 +77,7 @@
   </footer>
 
   <script src="../shared/domain.js"></script>
+  <script src="../shared/categories.js"></script>
   <script src="panel.js"></script>
 </body>
 </html>
